@@ -5,7 +5,9 @@ Usage: xmdy_dump.py job.bin [--json]
 SPDX-License-Identifier: MIT
 """
 import json
+import struct
 import sys
+import zlib
 
 KNOWN = {
     bytes.fromhex("10FFF102"): "job start (1)",
@@ -15,6 +17,9 @@ KNOWN = {
     bytes.fromhex("1D0C"): "form feed to mark",
     bytes.fromhex("1F1150"): "marked paper: end",
     bytes.fromhex("10FFF145"): "vendor job end",
+    bytes.fromhex("10FFFE01"): "bt start",
+    bytes.fromhex("10FFFE45"): "bt end",
+    bytes.fromhex("10FF40"): "status query",
 }
 
 
@@ -26,6 +31,15 @@ def decode(data):
             h = data[i + 6] | data[i + 7] << 8
             cmds.append({"cmd": "raster", "width_dots": wb * 8, "rows": h})
             i += 8 + wb * h
+        elif data[i:i + 2] == b"\x1f\x00":
+            wb, h, ln = struct.unpack(">HHI", data[i + 2:i + 10])
+            try:
+                raw = len(zlib.decompress(data[i + 10:i + 10 + ln], -15))
+            except zlib.error:
+                raw = -1
+            cmds.append({"cmd": "deflate page", "width_dots": wb * 8, "rows": h,
+                         "bytes": ln, "raw_ok": raw == wb * h})
+            i += 10 + ln
         elif data[i:i + 4] == b"\x10\xff\x10\x00":
             cmds.append({"cmd": "density", "value": data[i + 4]})
             i += 5

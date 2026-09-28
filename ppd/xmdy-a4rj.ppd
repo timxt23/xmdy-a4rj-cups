@@ -3,7 +3,7 @@
 *% Copyright (c) 2026 timxt23. SPDX-License-Identifier: MIT
 *% https://github.com/timxt23/xmdy-a4rj-cups
 *FormatVersion: "4.3"
-*FileVersion: "1.0.0"
+*FileVersion: "@VERSION@"
 *LanguageVersion: English
 *LanguageEncoding: ISOLatin1
 *cupsLanguages: "ru"
@@ -12,7 +12,7 @@
 *Product: "(A4RJ)"
 *ModelName: "XMDY A4RJ"
 *ShortNickName: "XMDY A4RJ"
-*NickName: "XMDY A4RJ Thermal, rastertoxmdy 1.0.0"
+*NickName: "XMDY A4RJ Thermal, rastertoxmdy @VERSION@"
 *1284DeviceID: "MFG:XMDY;MDL:A4RJ;CMD:XPP,XL;CLS:PRINTER;"
 *PSVersion: "(3010.000) 0"
 *LanguageLevel: "3"

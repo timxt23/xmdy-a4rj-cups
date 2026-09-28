@@ -6,8 +6,9 @@
  * SPDX-License-Identifier: MIT
  *
  * Input:  CUPS raster, 8-bit grayscale (or 1-bit), 203 dpi.
- * Output: printer byte stream, see PROTOCOL.md:
+ * Output: printer byte stream, see PROTOCOL.md. Two transports:
  *
+ * USB (default):
  *   10 FF F1 02  10 40  1F 80 01 10      job preamble
  *   10 FF 10 00 n                        print density, n = 0..3
  *   [1F 11 51]                           marked paper: find mark
@@ -19,6 +20,15 @@
  * The vendor driver ends every job with 10 FF F1 45. After that command the
  * first USB write of the next job fails ("Unable to send data to printer"),
  * so it is intentionally not sent. Printing is complete without it.
+ *
+ * Bluetooth (PPD attribute *XmdyTransport: "Bluetooth"), one block per page:
+ *   10 FF 10 00 n                        print density
+ *   10 FF FE 01                          start
+ *   [1F 11 51]  [ESC J n ...]            marks / feed before document (first page)
+ *   1F 00 wb:2 rows:2 len:4 <deflate>    whole page, raw DEFLATE, big-endian sizes
+ *   ESC J n ... [1D 0C 1F 11 50]         feeds / marks
+ *   10 FF FE 45                          end; the printer answers AA when done
+ * The status query 10 FF 40 and waiting for AA are done by xmdy-btd.
  *
  * Options (see ppd/xmdy-a4rj.ppd). Job options override PPD defaults.
  *   XmdyDensity     0..3            printer density command
@@ -44,6 +54,7 @@
 #include <string.h>
 #include <strings.h>
 #include <unistd.h>
+#include <zlib.h>
 
 #ifndef XMDY_VERSION
 #define XMDY_VERSION "dev"
@@ -96,6 +107,37 @@ static void feed_mm(int mm) {
   }
 }
 
+static const unsigned char BT_START[] = {0x10, 0xFF, 0xFE, 0x01};
+static const unsigned char BT_END[] = {0x10, 0xFF, 0xFE, 0x45};
+
+/* Bluetooth: whole page as one raw-DEFLATE block: 1F 00 wb rows len <data> */
+static int out_deflate_page(const unsigned char *bits, unsigned wb, unsigned rows) {
+  uLong raw = (uLong)wb * rows;
+  uLong cap = compressBound(raw) + 64;
+  unsigned char *buf = malloc(cap);
+  if (!buf) return -1;
+  z_stream z = {0};
+  if (deflateInit2(&z, 9, Z_DEFLATED, -15, 9, Z_DEFAULT_STRATEGY) != Z_OK) { free(buf); return -1; }
+  z.next_in = (Bytef *)bits;
+  z.avail_in = (uInt)raw;
+  z.next_out = buf;
+  z.avail_out = (uInt)cap;
+  int rc = deflate(&z, Z_FINISH);
+  uLong len = z.total_out;
+  deflateEnd(&z);
+  if (rc != Z_STREAM_END) { free(buf); return -1; }
+
+  unsigned char hdr[10] = {0x1F, 0x00, (unsigned char)(wb >> 8), (unsigned char)wb,
+                           (unsigned char)(rows >> 8), (unsigned char)rows,
+                           (unsigned char)(len >> 24), (unsigned char)(len >> 16),
+                           (unsigned char)(len >> 8), (unsigned char)len};
+  out(hdr, sizeof hdr);
+  out(buf, len);
+  fprintf(stderr, "DEBUG: page %ux%u compressed %lu -> %lu bytes\n", wb * 8, rows, raw, len);
+  free(buf);
+  return 0;
+}
+
 int main(int argc, char *argv[]) {
   if (argc < 6 || argc > 7) {
     fputs("Usage: rastertoxmdy job user title copies options [file]\n", stderr);
@@ -116,6 +158,13 @@ int main(int argc, char *argv[]) {
   const char *ppd_path = getenv("PPD");
   if (ppd_path && (ppd = ppdOpenFile(ppd_path)) != NULL) ppdMarkDefaults(ppd);
 
+  const char *transport = cupsGetOption("XmdyTransport", num_options, options);
+  if (!transport && ppd) {
+    ppd_attr_t *a = ppdFindAttr(ppd, "XmdyTransport", NULL);
+    if (a) transport = a->value;
+  }
+  int bt = transport && !strcasecmp(transport, "Bluetooth");
+
   const char *mt = opt(num_options, options, "XmdyMediaType", "Continuous");
   enum media media = !strcmp(mt, "Marks") ? MEDIA_MARKS
                    : !strcmp(mt, "Tattoo") ? MEDIA_TATTOO : MEDIA_CONTINUOUS;
@@ -132,7 +181,7 @@ int main(int argc, char *argv[]) {
   int page_feed = atoi(opt(num_options, options, "XmdyPageFeed", "0"));
   int feed_after = atoi(opt(num_options, options, "XmdyFeedAfter", "12"));
 
-  fprintf(stderr, "DEBUG: rastertoxmdy %s\n", XMDY_VERSION);
+  fprintf(stderr, "DEBUG: rastertoxmdy %s, transport %s\n", XMDY_VERSION, bt ? "Bluetooth" : "USB");
   fprintf(stderr, "DEBUG: density=%d threshold=%d diffusion=%d mirror=%d negative=%d trim=%d "
                   "offset=%d feed=%d/%d/%d media=%s\n", density, threshold, diffusion, mirror,
           negative, trim, offset_x, feed_before, page_feed, feed_after, mt);
@@ -161,10 +210,17 @@ int main(int argc, char *argv[]) {
     /* W/SW: 0 = black; K: 0 = white */
     int black_is_high = h.cupsColorSpace == CUPS_CSPACE_K;
 
-    if (page == 1) {
-      out(preamble, sizeof preamble);
-      unsigned char dcmd[5] = {0x10, 0xFF, 0x10, 0x00, (unsigned char)density};
+    unsigned char dcmd[5] = {0x10, 0xFF, 0x10, 0x00, (unsigned char)density};
+    if (bt) {
+      /* every page is its own start/end block, like the vendor Android app */
+      if (page > 1) out(BT_END, sizeof BT_END);
       out(dcmd, sizeof dcmd);
+      out(BT_START, sizeof BT_START);
+    } else if (page == 1) {
+      out(preamble, sizeof preamble);
+      out(dcmd, sizeof dcmd);
+    }
+    if (page == 1) {
       if (media == MEDIA_MARKS) out("\x1F\x11\x51", 3);
       feed_mm(feed_before);
     }
@@ -236,6 +292,15 @@ int main(int argc, char *argv[]) {
     unsigned rows = trim ? last_ink : y;
     if (trim) fprintf(stderr, "DEBUG: trim %u -> %u rows\n", y, rows);
 
+    if (bt) {
+      if (rows > 0xFFFF) rows = 0xFFFF;
+      if (rows > 0 && out_deflate_page(bits, wb, rows) < 0) {
+        fputs("ERROR: Compression failed\n", stderr);
+        return 1;
+      }
+      rows = 0; /* skip GS v 0 bands */
+    }
+
     for (unsigned r = 0; r < rows; r += BAND_ROWS) {
       /* the last band is padded with blank rows (buffer is zeroed), like the vendor driver */
       unsigned char hdr[8] = {0x1D, 0x76, 0x30, 0x00, (unsigned char)(wb & 0xFF),
@@ -250,6 +315,7 @@ int main(int argc, char *argv[]) {
   if (page > 0) {
     if (media == MEDIA_CONTINUOUS) feed_mm(feed_after);
     if (media == MEDIA_MARKS) out("\x1D\x0C\x1F\x11\x50", 5);
+    if (bt) out(BT_END, sizeof BT_END);
   } else {
     fputs("ERROR: No pages found in job\n", stderr);
   }

@@ -1,15 +1,17 @@
 <html><body style="font-family: -apple-system, Helvetica; font-size: 13px">
 <h3>XMDY A4RJ Printer Driver @VERSION@</h3>
-<p>Open-source CUPS driver for XMDY / HZTZ A4RJ portable A4 thermal printers (GD-88 family), USB connection.</p>
+<p>Open-source CUPS driver for XMDY / HZTZ A4RJ portable A4 thermal printers (GD-88 family), USB and Bluetooth.</p>
 <p>Installs:</p>
 <ul>
 <li><code>/Library/Printers/XMDY-A4/</code> &mdash; filter, queue setup and uninstall scripts</li>
-<li><code>/Library/Printers/PPDs/Contents/Resources/XMDY A4RJ.ppd</code></li>
+<li><code>/Library/Printers/PPDs/Contents/Resources/XMDY A4RJ*.ppd</code></li>
+<li><code>/Library/LaunchAgents/io.github.timxt23.xmdy-btd.plist</code> &mdash; starts the Bluetooth bridge app &ldquo;XMDY Bluetooth&rdquo;</li>
 </ul>
 <p>If the printer is connected and powered on, a print queue <b>XMDY_A4</b> is created automatically.
 Otherwise add the printer later in System Settings &rarr; Printers &amp; Scanners.</p>
+<p>Bluetooth: turn the printer on, run <code>/Library/Printers/XMDY-A4/xmdy-btpair</code> (as your user), then <code>sudo /Library/Printers/XMDY-A4/setup-queue.sh --bluetooth</code> and allow &ldquo;XMDY Bluetooth&rdquo; to use Bluetooth. If the printer is already paired, the queue <b>XMDY_A4_BT</b> is created automatically.</p>
 <p>To uninstall: <code>sudo /Library/Printers/XMDY-A4/uninstall.sh</code></p>
 <hr>
 <p>Драйвер CUPS с открытым кодом для термопринтеров XMDY / HZTZ A4RJ. Если принтер подключён по USB,
-будет создана очередь <b>XMDY_A4</b>. Удаление: <code>sudo /Library/Printers/XMDY-A4/uninstall.sh</code></p>
+будет создана очередь <b>XMDY_A4</b>. Bluetooth: <code>xmdy-btpair</code>, затем <code>sudo setup-queue.sh --bluetooth</code> (папка <code>/Library/Printers/XMDY-A4/</code>). Удаление: <code>sudo /Library/Printers/XMDY-A4/uninstall.sh</code></p>
 </body></html>

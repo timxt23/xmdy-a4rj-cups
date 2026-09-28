@@ -1,6 +1,8 @@
 #!/bin/sh
-# Package postinstall: set up a queue if the printer is connected.
-# Never fails the installation: the queue can be added later in
-# System Settings > Printers & Scanners or with setup-queue.sh.
-/Library/Printers/XMDY-A4/setup-queue.sh XMDY_A4 || true
+# Package postinstall. Never fails the installation: queues can be added
+# later with setup-queue.sh or in System Settings > Printers & Scanners.
+# setup-queue.sh --bluetooth also loads the Bluetooth bridge agent and
+# removes the system daemon used by 1.1.0 development builds.
+/Library/Printers/XMDY-A4/setup-queue.sh || true
+/Library/Printers/XMDY-A4/setup-queue.sh --bluetooth || true
 exit 0

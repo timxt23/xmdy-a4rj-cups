@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- LaunchAgent: Bluetooth bridge for the XMDY_A4_BT queue. Runs in the user's
+     session because macOS grants Bluetooth access only to user-approved apps. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>io.github.timxt23.xmdy-btd</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Library/Printers/XMDY-A4/XMDY Bluetooth.app/Contents/MacOS/xmdy-btd</string>
+    </array>
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+    <key>inetdCompatibility</key>
+    <dict>
+        <key>Wait</key>
+        <false/>
+    </dict>
+    <key>Sockets</key>
+    <dict>
+        <key>Listener</key>
+        <dict>
+            <key>SockNodeName</key>
+            <string>127.0.0.1</string>
+            <key>SockServiceName</key>
+            <string>9101</string>
+            <key>SockType</key>
+            <string>stream</string>
+        </dict>
+    </dict>
+</dict>
+</plist>

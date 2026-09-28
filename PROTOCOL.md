@@ -10,7 +10,7 @@ macOS CUPS filter and by testing on the hardware. No vendor code is included in 
 |---|---|
 | USB | `0FE6:811E`, product string "Virtual PRN" (generic USB–parallel bridge ID) |
 | IEEE 1284 ID | `MFG:XMDY ;CMD:XPP,XL;MDL:A4RJ;CLS:PRINTER;` |
-| Bluetooth | Classic SPP, name `A4RJ_XXXX` |
+| Bluetooth | Classic SPP (RFCOMM channel 1), name `A4RJ_XXXX` |
 | Print head | 203 dpi, 1680 dots across A4 (210 bytes per row), paper up to 218 mm |
 
 The printer answers ESC/POS status requests (`DLE EOT 1` → `0x12`), but it does **not** print
@@ -54,9 +54,40 @@ so `rastertoxmdy` does not send it.
 `10 FF 10 00 n` is the "set density" command used by this printer family's Android SDK in ESC mode.
 The vendor macOS driver shows a Darkness option but always sends `n = 0`.
 
+## Bluetooth
+
+Classic Bluetooth SPP, RFCOMM channel 1, MTU 248. Captured from the vendor Android app
+(HCI snoop log) and tested on the hardware.
+
+Over Bluetooth the printer does **not** accept the USB stream: it stops granting RFCOMM
+credits after a few kilobytes of uncompressed `GS v 0` bands. It expects one compressed
+block per page:
+
+```
+10 FF 40                    status query -> printer answers 00 (ready)
+10 FF 10 00 n               density
+10 FF FE 01                 start
+1F 00 wb:2 rows:2 len:4     page raster, sizes big-endian, followed by
+<len bytes>                 raw DEFLATE (zlib, no header) of wb*rows bytes, 1 bit per dot, 1 = black
+1B 4A n                     feed (the app sends 100 dots)
+10 FF FE 45                 end -> printer answers AA when the page is printed
+```
+
+The Android app sends the whole sequence, status query included, once per page.
+The printer applies RFCOMM flow control while it prints, so a page takes about 26 s in total
+no matter how fast the data is sent. A text page compresses to less than 10 kB.
+
+The printer does not answer ESC/POS `DLE EOT` over Bluetooth. Only `10 FF 40` gets a reply.
+
+### macOS notes
+
+- The printer is not offered a Connect button in System Settings (Printer device class).
+  Pairing works through `IOBluetoothDevicePair`, see `src/xmdy-btpair.m`.
+- The serial port `/dev/cu.A4RJ_XXXX` that macOS creates after pairing is unreliable. Once
+  the printer has slept, opening the port no longer brings up the link. Opening the RFCOMM
+  channel directly with IOBluetooth always works, see `src/xmdy-btd.m`.
+
 ## Not supported / unknown
 
 - Print speed: no ESC-mode speed command is known.
 - 300 dpi: some A4RJ units are sold as 300 dpi. The vendor macOS driver uses 203 dpi only.
-- Bluetooth printing: the same stream probably works over SPP, but it has not been tested.
-  macOS has no CUPS Bluetooth backend.
