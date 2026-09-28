@@ -1,0 +1,6 @@
+build/
+local/
+__pycache__/
+*.ras
+*.bin
+.DS_Store

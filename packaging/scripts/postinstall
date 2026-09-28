@@ -1,0 +1,6 @@
+#!/bin/sh
+# Package postinstall: set up a queue if the printer is connected.
+# Never fails the installation: the queue can be added later in
+# System Settings > Printers & Scanners or with setup-queue.sh.
+/Library/Printers/XMDY-A4/setup-queue.sh XMDY_A4 || true
+exit 0
